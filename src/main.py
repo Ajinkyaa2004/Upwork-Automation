@@ -1,12 +1,23 @@
 import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from .poller import run_poller
 from .telegram_bot import run_bot
 from .upwork_client import upwork
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    server = HTTPServer(("0.0.0.0", 8000), HealthHandler)
+    server.serve_forever()
+
 def main():
     print("=== Upwork Agent Starting ===")
-
-    # Quick test of token + company selector
     try:
         token = upwork._get_access_token()
         print(f"Got access token (length {len(token)})")
@@ -14,13 +25,13 @@ def main():
         print("Company selector:", selector)
     except Exception as e:
         print(f"Initial Upwork auth test failed: {e}")
-        print("Continuing anyway — check scopes and grant type.")
 
-    # Start poller in background thread
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+
     poller_thread = threading.Thread(target=run_poller, daemon=True)
     poller_thread.start()
 
-    # Run Telegram bot in main thread (blocking)
     run_bot()
 
 if __name__ == "__main__":
