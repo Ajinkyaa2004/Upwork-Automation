@@ -5,18 +5,60 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from .config import config
 from .db import SessionLocal, Draft
 from .upwork_client import upwork
+from .llm import generate_draft
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Upwork Agent is running. Drafts will appear here.")
+    await update.message.reply_text("Upwork Agent is running. Drafts will appear here.\n\nSend /test to generate a sample draft.")
+
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate a sample draft and send it with Approve/Reject buttons."""
+    fake_client_message = "Hi, I saw your profile and I'm interested in your services. Can you help me with a data analytics project?"
+    fake_history = []
+    draft_text = generate_draft(fake_client_message, fake_history)
+
+    db = SessionLocal()
+    try:
+        draft = Draft(
+            room_id="test_room",
+            room_name="Test Room",
+            client_message=fake_client_message,
+            draft_text=draft_text,
+            status="pending",
+            created_at=datetime.utcnow(),
+        )
+        db.add(draft)
+        db.commit()
+        db.refresh(draft)
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Approve & Send", callback_data=f"approve_{draft.id}"),
+                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{draft.id}"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        text = (
+            f"📩 <b>Test Draft</b>\n"
+            f"Room: Test Room\n\n"
+            f"<b>Client:</b>\n{fake_client_message}\n\n"
+            f"<b>Draft reply:</b>\n{draft_text}"
+        )
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
+        print(f"[TELEGRAM] Test draft #{draft.id} sent")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to generate test draft: {e}")
+        print(f"[TELEGRAM] Test failed: {e}")
+    finally:
+        db.close()
 
 async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data  # format: approve_<id> or reject_<id>
+    data = query.data
     action, draft_id_str = data.split("_", 1)
     draft_id = int(draft_id_str)
 
@@ -28,17 +70,23 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if action == "approve":
-            try:
-                result = upwork.send_message(draft.room_id, draft.draft_text)
+            if draft.room_id == "test_room":
                 draft.status = "sent"
                 draft.sent_at = datetime.utcnow()
-                draft.upwork_message_id = result.get("createRoomStoryV2", {}).get("id")
                 db.commit()
-                await query.edit_message_text(f"✅ Message sent successfully!\n\n{draft.draft_text}")
-            except Exception as e:
-                draft.status = "failed"
-                db.commit()
-                await query.edit_message_text(f"❌ Failed to send: {str(e)}")
+                await query.edit_message_text(f"✅ Test approved! (Not sent to Upwork)\n\n{draft.draft_text}")
+            else:
+                try:
+                    result = upwork.send_message(draft.room_id, draft.draft_text)
+                    draft.status = "sent"
+                    draft.sent_at = datetime.utcnow()
+                    draft.upwork_message_id = result.get("createRoomStoryV2", {}).get("id")
+                    db.commit()
+                    await query.edit_message_text(f"✅ Message sent successfully!\n\n{draft.draft_text}")
+                except Exception as e:
+                    draft.status = "failed"
+                    db.commit()
+                    await query.edit_message_text(f"❌ Failed to send: {str(e)}")
         elif action == "reject":
             draft.status = "rejected"
             db.commit()
@@ -86,6 +134,7 @@ def run_bot():
 
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("test", test_command))
     application.add_handler(CallbackQueryHandler(handle_approval))
     print("Starting Telegram bot...")
     application.run_polling()
