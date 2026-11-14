@@ -15,7 +15,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Upwork Agent is running. Drafts will appear here.\n\nSend /test to generate a sample draft.")
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate a sample draft and send it with Approve/Reject buttons."""
     fake_client_message = "Hi, I saw your profile and I'm interested in your services. Can you help me with a data analytics project?"
     fake_history = []
     draft_text = generate_draft(fake_client_message, fake_history)
@@ -136,5 +135,13 @@ def run_bot():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test", test_command))
     application.add_handler(CallbackQueryHandler(handle_approval))
-    print("Starting Telegram bot...")
-    application.run_polling()
+
+    # Webhook URL (Koyeb public URL)
+    webhook_url = "https://gothic-brianna-ajinkya-2004-66673461.apps.mistral.run/webhook"
+    print(f"Starting Telegram bot with webhook: {webhook_url}")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=8000,
+        url_path="webhook",
+        webhook_url=webhook_url,
+    )
