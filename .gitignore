@@ -1,3 +1,7 @@
-upwork-agent/.env
-upwork-agent/.env
 .env
+deploy.env
+data/
+backup-original/
+__pycache__/
+*.pyc
+.DS_Store

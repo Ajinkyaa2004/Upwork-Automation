@@ -17,6 +17,11 @@ def generate_draft(client_message: str, history: str = "") -> str:
         model=config.GROQ_MODEL,
         messages=messages,
         temperature=0.7,
-        max_tokens=500,
+        # Reasoning models spend part of this budget thinking before they
+        # write, so it has to be well above the length of the reply itself.
+        max_tokens=2000,
     )
-    return response.choices[0].message.content.strip()
+    text = (response.choices[0].message.content or "").strip()
+    if not text:
+        raise RuntimeError(f"{config.GROQ_MODEL} returned an empty reply")
+    return text
