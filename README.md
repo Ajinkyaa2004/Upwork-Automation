@@ -312,7 +312,13 @@ The agent runs as a single Docker Compose service with `restart: unless-stopped`
 bash deploy.sh
 ```
 
-Edit the `KEY`, `HOST` and `DEST` values at the top of the script for your server.
+Put your server details in a `deploy.env` file next to the script (it is git-ignored):
+
+```
+DEPLOY_HOST=ubuntu@your.server.ip
+DEPLOY_KEY=$HOME/.ssh/your_key
+DEPLOY_DEST=/opt/upwork-agent
+```
 
 ### Option 2: Any container platform
 

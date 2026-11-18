@@ -1,10 +1,10 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean
+from sqlalchemy import create_engine, inspect, text, Column, Integer, String, Text, DateTime, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 from .config import config
 import os
 
-os.makedirs(os.path.dirname(config.DATABASE_PATH), exist_ok=True)
+os.makedirs(os.path.dirname(config.DATABASE_PATH) or ".", exist_ok=True)
 
 engine = create_engine(f"sqlite:///{config.DATABASE_PATH}")
 SessionLocal = sessionmaker(bind=engine)
@@ -16,6 +16,7 @@ class Draft(Base):
     id = Column(Integer, primary_key=True)
     room_id = Column(String, index=True)
     room_name = Column(String, nullable=True)
+    story_id = Column(String, index=True, nullable=True)  # Upwork message this draft answers
     client_message = Column(Text)
     draft_text = Column(Text)
     status = Column(String, default="pending")  # pending, approved, rejected, sent, failed
@@ -24,6 +25,11 @@ class Draft(Base):
     upwork_message_id = Column(String, nullable=True)
 
 Base.metadata.create_all(bind=engine)
+
+# Databases created before story_id existed need the column added.
+if "story_id" not in [c["name"] for c in inspect(engine).get_columns("drafts")]:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE drafts ADD COLUMN story_id VARCHAR"))
 
 def get_db():
     db = SessionLocal()

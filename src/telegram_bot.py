@@ -1,3 +1,4 @@
+import html
 import logging
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,12 +10,15 @@ from .llm import generate_draft
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL, and Telegram URLs contain the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Upwork Agent is running. Drafts will appear here.\n\nSend /test to generate a sample draft.")
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate a sample draft and send it with Approve/Reject buttons."""
     fake_client_message = "Hi, I saw your profile and I'm interested in your services. Can you help me with a data analytics project?"
     fake_history = []
     draft_text = generate_draft(fake_client_message, fake_history)
@@ -33,6 +37,7 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
         db.refresh(draft)
 
+        # Send notification with buttons
         keyboard = [
             [
                 InlineKeyboardButton("✅ Approve & Send", callback_data=f"approve_{draft.id}"),
@@ -43,8 +48,8 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             f"📩 <b>Test Draft</b>\n"
             f"Room: Test Room\n\n"
-            f"<b>Client:</b>\n{fake_client_message}\n\n"
-            f"<b>Draft reply:</b>\n{draft_text}"
+            f"<b>Client:</b>\n{html.escape(fake_client_message)}\n\n"
+            f"<b>Draft reply:</b>\n{html.escape(draft_text)}"
         )
         await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
         print(f"[TELEGRAM] Test draft #{draft.id} sent")
@@ -57,7 +62,7 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
+    data = query.data  # format: approve_<id> or reject_<id>
     action, draft_id_str = data.split("_", 1)
     draft_id = int(draft_id_str)
 
@@ -66,6 +71,11 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         draft = db.query(Draft).filter(Draft.id == draft_id).first()
         if not draft:
             await query.edit_message_text("Draft not found.")
+            return
+
+        if draft.status != "pending":
+            # Guards against a double tap sending the same reply twice.
+            await query.edit_message_text(f"This draft was already handled ({draft.status}).")
             return
 
         if action == "approve":
@@ -107,9 +117,9 @@ def send_draft_notification(draft: Draft):
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = (
         f"📩 <b>New Upwork Draft</b>\n"
-        f"Room: {draft.room_name or draft.room_id}\n\n"
-        f"<b>Client:</b>\n{draft.client_message[:400]}{'...' if len(draft.client_message) > 400 else ''}\n\n"
-        f"<b>Draft reply:</b>\n{draft.draft_text}"
+        f"Room: {html.escape(draft.room_name or draft.room_id or '')}\n\n"
+        f"<b>Client:</b>\n{html.escape(draft.client_message[:400])}{'...' if len(draft.client_message) > 400 else ''}\n\n"
+        f"<b>Draft reply:</b>\n{html.escape(draft.draft_text)}"
     )
 
     url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -135,13 +145,5 @@ def run_bot():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test", test_command))
     application.add_handler(CallbackQueryHandler(handle_approval))
-
-    # Webhook URL (Koyeb public URL)
-    webhook_url = "https://gothic-brianna-ajinkya-2004-66673461.apps.mistral.run/webhook"
-    print(f"Starting Telegram bot with webhook: {webhook_url}")
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=8000,
-        url_path="webhook",
-        webhook_url=webhook_url,
-    )
+    print("Starting Telegram bot...")
+    application.run_polling()

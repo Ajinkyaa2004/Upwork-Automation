@@ -1,0 +1,11 @@
+.env
+.env.*
+data/
+backup-original/
+__pycache__/
+*.pyc
+.git/
+*.md
+render.yaml
+deploy.sh
+deploy.env
